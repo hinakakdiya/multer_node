@@ -3,7 +3,7 @@ import userModel from "../Models/userModel.js";
 
 const userRouter = express.Router()
 
-userRouter.post("/create/users", async (req, res) =>{
+userRouter.post("/create/users", async (req, res) => {
     try {
         const userName = req.body.name
         const userEmail = req.body.email
@@ -51,5 +51,6 @@ userRouter.get("/user/check/:userEmail", async(req, res) =>{
         })
     }
 })
+
 
 export default userRouter;

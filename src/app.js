@@ -12,6 +12,9 @@ import fileModel from "./Models/Files.js"
 import userRouter from "./Apis/userApis.js"
 import userModel from "./Models/userModel.js"
 import chatModel from "./Models/chatModel.js"
+import groupChatModel from "./Models/groupChatModel.js"
+import { timeStamp } from "console"
+import groupApi from "./Apis/groupApi.js"
 
 
 const apiServerInstance = express()
@@ -72,7 +75,6 @@ const storage = multer.diskStorage({
 
         let extName = path.extname(file.originalname)
         req.body.extension = extName.split(".")[1]
-        // console.log(extName.shift());
 
         let uuid = v4()
         req.body.uuid = uuid
@@ -91,6 +93,8 @@ var upload = multer({
 apiServerInstance.use(express.json())
 
 apiServerInstance.use(userRouter)
+
+apiServerInstance.use(groupApi)
 
 apiServerInstance.get("/server-status", (req, res) => {
     try {
@@ -300,6 +304,25 @@ io.on("connection", (socket) => {
             
         }
     });
+
+    //group join
+    socket.on("joinGroup", async (groupID) => {
+        socket.join(groupID)
+        const group = await groupChatModel.findOne({groupID})
+
+        socket.emit("groupMessage", group.message)
+    })
+
+    // group message
+    socket.on("groupMesage", async (doc) => {
+        const {groupID, senderID, message} = doc
+        const group = await groupChatModel.findOneAndUpdate(
+            {groupID},
+            {$push : {messages: {senderID, message, timeStamp: new Date()}}},
+            {new: true}
+        )
+        io.to(groupID).emit("newGroupMessage", {senderID, message, timeStamp: new Date()})
+    })
 
     socket.on("jkl", (doc) => {
         console.log("jkl log == ", doc);

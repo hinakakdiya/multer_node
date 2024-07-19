@@ -1,25 +1,25 @@
 import mongoose from "mongoose"
-import {v1} from "uuid"
+import { v1 } from "uuid"
 
 const userSchema = mongoose.Schema({
 
     name: {
         type: String,
-        required: true 
+        required: true
     },
 
-    userID:{
+    userID: {
         type: String,
         default: v1
     },
 
-    email:{
+    email: {
         type: String,
         unique: true,
         required: true
     },
 
-    password:{
+    password: {
         type: String,
         required: true
     }
