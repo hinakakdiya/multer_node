@@ -8,6 +8,10 @@ import cron from "node-cron"
 import { rateLimit } from "express-rate-limit"
 import { Server } from "socket.io"
 
+import admin from "firebase-admin"
+import { readFileSync } from "fs"
+import serviceAccount from "../firstfb-6aa63-firebase-adminsdk-vrfzf-452637f945.json" assert { type : "json"}
+
 import fileModel from "./Models/Files.js"
 import userRouter from "./Apis/userApis.js"
 import userModel from "./Models/userModel.js"
@@ -15,6 +19,7 @@ import chatModel from "./Models/chatModel.js"
 import groupChatModel from "./Models/groupChatModel.js"
 import { timeStamp } from "console"
 import groupApi from "./Apis/groupApi.js"
+import { type } from "os"
 
 
 const apiServerInstance = express()
@@ -23,6 +28,15 @@ const apiServerInstance = express()
 dotenv.config()
 
 apiServerInstance.use(express.json())
+
+
+//<------upload file in firebase
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: "firstfb-6aa63.appspot.com"
+});
+
+const bucket = admin.storage().bucket()
 
 
 //<--------rateLimit----------->
@@ -165,6 +179,24 @@ apiServerInstance.get("/getAllData", async (req, res) => {
     }
 })
 
+
+//<------upload file in firebase------->
+apiServerInstance.post('/upload/file', upload.single('file'), async (req, res) => {
+    try {
+        const { file } = req
+        const storageRef = bucket.file(`uploads/${file.originalname}`)
+        const fileBuffer = readFileSync(file.path)
+        await storageRef.save(fileBuffer, { contentType: file.mimetype })
+        const [downloadURL] = await storageRef.getSignedUrl({
+            action: 'read',
+            expires: '03-01-2500'
+        })
+        res.status(200).json({ message: 'File uploaded successfully', downloadURL })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
 //<-----cron---->every same time runing------>
 // cron.schedule('*/10 * * * * *', async () => {
 //     console.log('Task running every 1 minutes');
@@ -208,30 +240,29 @@ let connectedSocketUsersObj = {}
 io.on("connection", (socket) => {
     console.log("user connected and id is === ", socket.id);
 
-
     socket.on("disconnect", (socket) => {
-        console.log("abcdefgh");
         console.log("user disconnected == ", socket.id);
-    });
+    })
 
     socket.on("register", async (doc) => {
         console.log("register event");
-        connectedSocketUsersObj[doc.userID] = socket.id
+        connectedSocketUsersObj[doc.userID] = socket.id;
         console.log(connectedSocketUsersObj);
 
         const data = await userModel.find();
 
-        console.log("data === ", data);
 
         socket.emit("all_user_get", { data });
 
-        const chatData = await chatModel.find({ senderID: "1" })
+        const chatData = await chatModel.find({ senderID: "1" });
 
         socket.emit("chat-data", { chatData })
+
     });
 
     socket.on("drop_message", async (doc) => {
-        console.log("driver message doc == ", doc);
+        
+        console.log("drive message doc == ", doc);
 
         const chatData = await chatModel.find({
             $or: [
@@ -243,7 +274,7 @@ io.on("connection", (socket) => {
         let chatMessage
 
         if (!chatData.length) {
-            console.log("receiverId == ", doc.receiverID);
+            console.log("receiverId ==", doc.receiverID);
             const prepareChatData = new chatModel({
                 chatID: v4(),
                 senderID: doc.senderID,
@@ -251,11 +282,10 @@ io.on("connection", (socket) => {
                 message: doc.message
             })
 
+
             const savedData = await prepareChatData.save()
             chatMessage = savedData
-
         } else {
-
             const prepareChatData = new chatModel({
                 chatID: chatData[0].chatID,
                 senderID: doc.senderID,
@@ -267,23 +297,22 @@ io.on("connection", (socket) => {
             chatMessage = savedData
         }
         console.log("chat message == ", chatMessage);
-
         const user = connectedSocketUsersObj[`${doc.receiverID}`];
         console.log("user === ", doc.receiverID, user);
 
-        socket.to(user).emit("caught_message",chatMessage);
+        socket.to(user).emit("caught_message", chatMessage);
     });
 
     socket.on("get_all_chat", async (doc) => {
         const chatData = await chatModel.find({
-          $or: [
-            { senderID: doc.senderID, receiverID: doc.receiverID },
-            { senderID: doc.receiverID, receiverID: doc.senderID },
-          ],
+            $or: [
+                { senderID: doc.senderID, receiverID: doc.receiverID },
+                { senderID: doc.receiverID, receiverID: doc.senderID },
+            ],
         });
-    
-        socket.emit("catch_all_chat", {chatData})
-      })
+
+        socket.emit("catch_all_chat", { chatData })
+    })
 
     socket.on("get_users", async (doc) => {
         try {
@@ -300,29 +329,27 @@ io.on("connection", (socket) => {
             console.log("data === ", data);
 
             socket.emit("searched_value", { data });
-        } catch (error) {
-            
-        }
-    });
-
-    //group join
-    socket.on("joinGroup", async (groupID) => {
-        socket.join(groupID)
-        const group = await groupChatModel.findOne({groupID})
-
-        socket.emit("groupMessage", group.message)
+        } catch (error) { }
     })
 
-    // group message
-    socket.on("groupMesage", async (doc) => {
-        const {groupID, senderID, message} = doc
-        const group = await groupChatModel.findOneAndUpdate(
-            {groupID},
-            {$push : {messages: {senderID, message, timeStamp: new Date()}}},
-            {new: true}
-        )
-        io.to(groupID).emit("newGroupMessage", {senderID, message, timeStamp: new Date()})
-    })
+    // // group join
+    // socket.on("joinGroup", async (groupID) => {
+    //     socket.join(groupID)
+    //     const group = await groupChatModel.findOne({groupID})
+
+    //     socket.emit("groupMessage", group.message)
+    // })
+
+    // // group message
+    // socket.on("groupMesage", async (doc) => {
+    //     const {groupID, senderID, message} = doc
+    //     const group = await groupChatModel.findOneAndUpdate(
+    //         {groupID},
+    //         {$push : {messages: {senderID, message, timeStamp: new Date()}}},
+    //         {new: true}
+    //     )
+    //     io.to(groupID).emit("newGroupMessage", {senderID, message, timeStamp: new Date()})
+    // })
 
     socket.on("jkl", (doc) => {
         console.log("jkl log == ", doc);
